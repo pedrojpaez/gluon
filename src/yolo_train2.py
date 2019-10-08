@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 
 from subprocess import call
-call('pip install --upgrade mxnet gluoncv',shell=True)
+call('pip install --upgrade gluoncv',shell=True)
 
 import mxnet as mx
 from mxnet import nd
@@ -55,29 +55,6 @@ def download_voc(path, overwrite=False):
         with tarfile.open(filename) as tar:
             tar.extractall(path=path)
 
-
-#####################################################################################
-# Download and extract the VOC augmented segmentation dataset into ``path``
-
-def download_aug(path, overwrite=False):
-    _AUG_DOWNLOAD_URLS = [
-        ('http://www.eecs.berkeley.edu/Research/Projects/CS/vision/grouping/semantic_contours/benchmark.tgz', '7129e0a480c2d6afb02b517bb18ac54283bfaa35')]
-    makedirs(path)
-    for url, checksum in _AUG_DOWNLOAD_URLS:
-        filename = download(url, path=path, overwrite=overwrite, sha1_hash=checksum)
-        # extract
-        with tarfile.open(filename) as tar:
-            tar.extractall(path=path)
-            shutil.move(os.path.join(path, 'benchmark_RELEASE'),
-                        os.path.join(path, 'VOCaug'))
-            filenames = ['VOCaug/dataset/train.txt', 'VOCaug/dataset/val.txt']
-            # generate trainval.txt
-            with open(os.path.join(path, 'VOCaug/dataset/trainval.txt'), 'w') as outfile:
-                for fname in filenames:
-                    fname = os.path.join(path, fname)
-                    with open(fname) as infile:
-                        for line in infile:
-                            outfile.write(line)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train YOLO networks with random input shape.')
@@ -287,18 +264,8 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
     scale_metrics = mx.metric.Loss('BoxScaleLoss')
     cls_metrics = mx.metric.Loss('ClassLoss')
 
-    # set up logger
-    logging.basicConfig()
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    log_file_path = args.save_prefix + '_train.log'
-    log_dir = os.path.dirname(log_file_path)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    fh = logging.FileHandler(log_file_path)
-    logger.addHandler(fh)
-    logger.info(args)
-    logger.info('Start training from [Epoch {}]'.format(args.start_epoch))
+
+    print('Start training from [Epoch {}]'.format(args.start_epoch))
     best_map = [0]
     for epoch in range(args.start_epoch, args.epochs):
         if args.mixup:
@@ -347,7 +314,7 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
                 name2, loss2 = center_metrics.get()
                 name3, loss3 = scale_metrics.get()
                 name4, loss4 = cls_metrics.get()
-                logger.info('[Epoch {}][Batch {}], LR: {:.2E}, Speed: {:.3f} samples/sec, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
+                print('[Epoch {}][Batch {}], LR: {:.2E}, Speed: {:.3f} samples/sec, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
                     epoch, i, trainer.learning_rate, batch_size/(time.time()-btic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
             btic = time.time()
 
@@ -355,13 +322,13 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
         name2, loss2 = center_metrics.get()
         name3, loss3 = scale_metrics.get()
         name4, loss4 = cls_metrics.get()
-        logger.info('[Epoch {}] Training cost: {:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
+        print('[Epoch {}] Training cost: {:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
             epoch, (time.time()-tic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
         if not (epoch + 1) % args.val_interval:
             # consider reduce the frequency of validation to save time
             map_name, mean_ap = validate(net, val_data, ctx, eval_metric)
             val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
-            logger.info('[Epoch {}] Validation: \n{}'.format(epoch, val_msg))
+            print('[Epoch {}] Validation: \n{}'.format(epoch, val_msg))
             current_map = float(mean_ap[-1])
         else:
             current_map = 0.
@@ -388,13 +355,6 @@ if __name__ == '__main__':
             shutil.move(os.path.join(path, 'VOCdevkit', 'VOC2012'), os.path.join(path, 'VOC2012'))
             shutil.rmtree(os.path.join(path, 'VOCdevkit'))
 
-    if not os.path.isdir(os.path.join(path, 'VOCaug')):
-        if args.no_download:
-            raise ValueError(('{} is not a valid directory, make sure it is present.'
-                              ' Or you should not disable "--no-download" to grab it'.format(path)))
-        else:
-            download_aug(path, overwrite=args.overwrite)
-
     # make symlink
     makedirs(os.path.expanduser('~/.mxnet/datasets'))
     if os.path.isdir(_TARGET_DIR):
@@ -404,10 +364,9 @@ if __name__ == '__main__':
     
     # training contexts
     print('hello')
-    #ctx=mx.cpu()
-    ctx=[mx.gpu(0)]
-    #ctx = [mx.gpu(int(i)) for i in args.gpus.split(',') if i.strip()]
-    #ctx = ctx if ctx else [mx.cpu()]
+
+    ctx = [mx.gpu(int(i)) for i in args.gpus.split(',') if i.strip()]
+    ctx = ctx if ctx else [mx.cpu()]
 
     # network
     net_name = '_'.join(('yolo3', args.network, args.dataset))
