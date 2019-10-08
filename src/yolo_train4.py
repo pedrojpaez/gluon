@@ -20,7 +20,8 @@ from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv.data.transforms.presets.yolo import YOLO3DefaultTrainTransform
 from gluoncv.data.transforms.presets.yolo import YOLO3DefaultValTransform
 from gluoncv.data.dataloader import RandomTransformDataLoader
-from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
+#from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
+from hello import VOC07MApMetric
 from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
 from gluoncv.utils import LRScheduler, LRSequential
 
@@ -104,7 +105,6 @@ def parse_args():
     return args
 
 
-
 def get_dataset(args): 
     train_dataset = gcv.data.RecordFileDetection(os.path.join(args.train,'birds_ssd_sample_train.rec'))
     val_dataset = gcv.data.RecordFileDetection(os.path.join(args.test,'birds_ssd_sample_val.rec'))
@@ -179,6 +179,38 @@ def validate(net, val_data, ctx, eval_metric):
         # update metric        
         eval_metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids)
     return eval_metric.get()
+
+def validate_train(net, train_data, ctx, eval_metric):
+    """Test on validation dataset."""
+    clipper = gcv.nn.bbox.BBoxClipToImage()
+    eval_metric.reset()
+    if not args.disable_hybridization:
+        # input format is differnet than training, thus rehybridization is needed.
+        net.hybridize(static_alloc=args.static_alloc)
+    for batch in val_data:
+        data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
+        label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
+        det_bboxes = []
+        det_ids = []
+        det_scores = []
+        gt_bboxes = []
+        gt_ids = []        
+        for x, y in zip(data, label):
+            # get prediction results
+            ids, scores, bboxes = net(x)
+            det_ids.append(ids)
+            det_scores.append(scores)
+            # clip to image size
+            det_bboxes.append(bboxes.clip(0, batch[0].shape[2]))
+            # split ground truths
+            gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
+            gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
+
+        # update metric
+        for det_bbox, det_id, det_score, gt_bbox, gt_id, gt_diff in zip(det_bboxes, det_ids,
+                                                                        det_scores, gt_bboxes,
+                                                                        gt_ids, gt_difficults):
+            eval_metric.update(det_bbox, det_id, det_score, gt_bbox, gt_id, gt_diff)
 
 def train(net, train_data, val_data, eval_metric, ctx, args):
     """Training pipeline"""
@@ -295,12 +327,22 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
             print("validate:", epoch + 1)
             # consider reduce the frequency of validation to save time
             map_name, mean_ap = validate(net, val_data, ctx, eval_metric)
-            val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
-            logger.info('[Epoch {}] Validation: \n{}'.format(epoch, val_msg))
-            current_map = float(mean_ap[-1])            
+            map_name_train, mean_ap_train = validate(net, train_data, ctx, eval_metric)
+            print('MAP PRINTINNNNNNGGGG')
+            if isinstance(map_name, list):
+                val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
+                train_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name_train, mean_ap_train)])
+                current_map = float(mean_ap[-1])
+            else:
+                val_msg='{}={}'.format(map_name, mean_ap)
+                train_msg='{}={}'.format(map_name_train, mean_ap_train)
+                current_map = mean_ap
+            logger.info('[Epoch {}] Validation: {}'.format(epoch, val_msg))
+            logger.info('[Epoch {}] Train: {}'.format(epoch, train_msg))     
         else:
             current_map = 0.
-        save_params(net, best_map, current_map, epoch, args.save_interval, args.save_prefix)            
+        save_params(net, best_map, current_map, epoch, args.save_interval, os.path.join(args.model_dir, 'yolov3'))
+        
 
 if __name__ == '__main__':
     args = parse_args()
