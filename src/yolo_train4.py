@@ -327,18 +327,18 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
             print("validate:", epoch + 1)
             # consider reduce the frequency of validation to save time
             map_name, mean_ap = validate(net, val_data, ctx, eval_metric)
-            map_name_train, mean_ap_train = validate(net, train_data, ctx, eval_metric)
+            #map_name_train, mean_ap_train = validate(net, train_data, ctx, eval_metric)
             print('MAP PRINTINNNNNNGGGG')
             if isinstance(map_name, list):
                 val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
-                train_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name_train, mean_ap_train)])
+                #train_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name_train, mean_ap_train)])
                 current_map = float(mean_ap[-1])
             else:
                 val_msg='{}={}'.format(map_name, mean_ap)
-                train_msg='{}={}'.format(map_name_train, mean_ap_train)
+                #train_msg='{}={}'.format(map_name_train, mean_ap_train)
                 current_map = mean_ap
-            logger.info('[Epoch {}] Validation: {}'.format(epoch, val_msg))
-            logger.info('[Epoch {}] Train: {}'.format(epoch, train_msg))     
+            logger.info('[Epoch {}] Validation: {} ;'.format(epoch, val_msg))
+            #logger.info('[Epoch {}] Train: {} ;'.format(epoch, train_msg))     
         else:
             current_map = 0.
         save_params(net, best_map, current_map, epoch, args.save_interval, os.path.join(args.model_dir, 'yolov3'))
